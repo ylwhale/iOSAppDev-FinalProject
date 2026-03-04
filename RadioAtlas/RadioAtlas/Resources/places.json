@@ -1,0 +1,101 @@
+[
+  {
+    "id": "lib-crib",
+    "name": "Crerar Library",
+    "category": "study",
+    "subtitle": "Science library \u00b7 group rooms",
+    "address": "5730 S Ellis Ave",
+    "hours": "Mon\u2013Fri 8:00 AM \u2013 10:00 PM",
+    "notes": "Good for STEM work and quick reference materials.",
+    "latitude": 41.7906,
+    "longitude": -87.601
+  },
+  {
+    "id": "coffee-plex",
+    "name": "Plex Coffee Corner",
+    "category": "food",
+    "subtitle": "Coffee \u00b7 pastries",
+    "address": "Inside Student Center",
+    "hours": "Mon\u2013Fri 7:30 AM \u2013 6:00 PM",
+    "notes": "Fast grab-and-go. Try searching \u201ccoffee\u201d.",
+    "latitude": 41.7919,
+    "longitude": -87.5999
+  },
+  {
+    "id": "food-dining",
+    "name": "Campus Dining Hall",
+    "category": "food",
+    "subtitle": "Hot meals \u00b7 salad bar",
+    "address": "South Campus",
+    "hours": "Daily 7:00 AM \u2013 9:00 PM",
+    "notes": "Busy during noon. Favorites help you keep it handy.",
+    "latitude": 41.7879,
+    "longitude": -87.5986
+  },
+  {
+    "id": "services-it",
+    "name": "IT Help Desk",
+    "category": "services",
+    "subtitle": "Account help \u00b7 device setup",
+    "address": "Tech Support Center",
+    "hours": "Mon\u2013Fri 9:00 AM \u2013 5:00 PM",
+    "notes": "Reset passwords and set up Wi\u2011Fi. No appointment needed.",
+    "latitude": 41.7928,
+    "longitude": -87.6009
+  },
+  {
+    "id": "services-health",
+    "name": "Student Wellness Center",
+    "category": "services",
+    "subtitle": "Counseling \u00b7 basic care",
+    "address": "Wellness Building",
+    "hours": "Mon\u2013Fri 8:30 AM \u2013 4:30 PM",
+    "notes": "If this were a real product, show emergency resources here.",
+    "latitude": 41.7902,
+    "longitude": -87.5967
+  },
+  {
+    "id": "outdoors-quad",
+    "name": "Main Quad",
+    "category": "outdoors",
+    "subtitle": "Open lawn \u00b7 iconic spot",
+    "address": "Central Campus",
+    "hours": "Always open",
+    "notes": "Great break spot between classes.",
+    "latitude": 41.7917,
+    "longitude": -87.6003
+  },
+  {
+    "id": "outdoors-garden",
+    "name": "Botanic Garden Path",
+    "category": "outdoors",
+    "subtitle": "Walking path \u00b7 greenery",
+    "address": "North of campus center",
+    "hours": "Daily 7:00 AM \u2013 7:00 PM",
+    "notes": "Quick reset walk. Works well as a demo destination.",
+    "latitude": 41.7951,
+    "longitude": -87.5976
+  },
+  {
+    "id": "housing-north",
+    "name": "North Residence Hall",
+    "category": "housing",
+    "subtitle": "Dorm \u00b7 laundry room",
+    "address": "North Campus",
+    "hours": "Residents 24/7",
+    "notes": "Add more dorms if you want bigger data.",
+    "latitude": 41.7956,
+    "longitude": -87.6018
+  },
+  {
+    "id": "housing-south",
+    "name": "South Residence Hall",
+    "category": "housing",
+    "subtitle": "Dorm \u00b7 study lounge",
+    "address": "South Campus",
+    "hours": "Residents 24/7",
+    "notes": "Try the category chips to filter housing.",
+    "latitude": 41.7888,
+    "longitude": -87.5991
+  }
+]

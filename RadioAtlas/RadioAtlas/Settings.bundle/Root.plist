@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PreferenceSpecifiers</key>
+  <array>
+    <dict>
+      <key>Type</key>
+      <string>PSGroupSpecifier</string>
+      <key>Title</key>
+      <string>About</string>
+    </dict>
+
+    <dict>
+      <key>Type</key>
+      <string>PSTitleValueSpecifier</string>
+      <key>Title</key>
+      <string>Developer</string>
+      <key>Key</key>
+      <string>developer_name</string>
+      <key>DefaultValue</key>
+      <string>Jingyu Huang</string>
+    </dict>
+
+    <dict>
+      <key>Type</key>
+      <string>PSTitleValueSpecifier</string>
+      <key>Title</key>
+      <string>App Version</string>
+      <key>Key</key>
+      <string>app_version</string>
+      <key>DefaultValue</key>
+      <string>1.0</string>
+    </dict>
+
+    <dict>
+      <key>Type</key>
+      <string>PSToggleSwitchSpecifier</string>
+      <key>Title</key>
+      <string>Show Onboarding at Launch</string>
+      <key>Key</key>
+      <string>show_onboarding</string>
+      <key>DefaultValue</key>
+      <true/>
+    </dict>
+
+    <dict>
+      <key>Type</key>
+      <string>PSGroupSpecifier</string>
+      <key>Title</key>
+      <string>Launch Info</string>
+    </dict>
+
+    <dict>
+      <key>Type</key>
+      <string>PSTitleValueSpecifier</string>
+      <key>Title</key>
+      <string>Initial Launch</string>
+      <key>Key</key>
+      <string>Initial Launch</string>
+      <key>DefaultValue</key>
+      <string>(set on first launch)</string>
+    </dict>
+
+  </array>
+
+  <key>StringsTable</key>
+  <string>Root</string>
+</dict>
+</plist>
