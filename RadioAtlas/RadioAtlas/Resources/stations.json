@@ -156,16 +156,16 @@
     "description": "Public radio from Radio Television Hong Kong."
   },
   {
-    "id": "rthk_radio_2",
-    "name": "RTHK – Radio 2",
+    "id": "rb_aaaa7f81d3d144a59565c88f",
+    "name": "RTHK – Radio 3",
     "city": "Hong Kong",
     "country": "China",
     "latitude": 22.3193,
     "longitude": 114.1694,
-    "streamURL": "https://rthkaudio4-lh.akamaihd.net/i/radio2_1@355865/master.m3u8",
+    "streamURL": "https://stm.rthk.hk/radio3a",
+    "description": "RTHK Radio 3 (Hong Kong). Tags: news, talk, music, english, hong kong.",
     "logoURL": "https://www.rthk.hk/favicon.ico",
-    "briefDescription": "Music-focused Hong Kong public radio with pop, entertainment, and live shows in Cantonese.",
-    "description": "Music and entertainment from Radio Television Hong Kong."
+    "briefDescription": "news, talk, music, english — Hong Kong."
   },
   {
     "id": "rb_ab909bf616f94066b0009b0b",
@@ -300,16 +300,16 @@
     "description": "An internet radio stream focused on J-POP and anime music."
   },
   {
-    "id": "nolife_radio",
-    "name": "No Life Radio",
-    "city": "Tokyo",
+    "id": "jp_fm_hanako",
+    "name": "FM Hanako",
+    "city": "Moriguchi",
     "country": "Japan",
-    "latitude": 35.6762,
-    "longitude": 139.6503,
-    "streamURL": "http://radio.nolife-radio.com:9000/stream",
-    "logoURL": "https://nolife-radio.com/favicon.ico",
-    "briefDescription": "A 24/7 stream featuring Japanese music, anime tracks, and curated playlists for fans worldwide.",
-    "description": "Japanese music and anime-focused internet radio."
+    "latitude": 34.73333,
+    "longitude": 135.56667,
+    "streamURL": "http://musicbird.leanstream.co/JCB069-MP3",
+    "logoURL": "",
+    "briefDescription": "community radio, local music, japan — Japan.",
+    "description": "Community radio from Moriguchi, Osaka, with local music and neighborhood programming."
   },
   {
     "id": "rb_8d19ab98ff22440caf050b16",
@@ -396,16 +396,16 @@
     "briefDescription": "New Zealand public radio with news, analysis, and talk programmes."
   },
   {
-    "id": "rb_fb4fa30f071a4f76a27dff4f",
-    "name": "🎥 ues 🎬",
-    "city": "Oslo",
-    "country": "Norway",
-    "latitude": 59.91216063048009,
-    "longitude": 10.739086729008706,
-    "streamURL": "https://listen.radionomy.com/unleashingepicsoundtracks",
-    "description": "Radio station from Norway. Tags: epic, movies, ost.",
-    "logoURL": "https://pbs.twimg.com/media/Fn3VyiVWQAAqut9?format=png",
-    "briefDescription": "epic, movies, ost — Norway."
+    "id": "rb_986b171db62c4f6daa47c623",
+    "name": "France Musique",
+    "city": "Paris",
+    "country": "France",
+    "latitude": 48.8566,
+    "longitude": 2.3522,
+    "streamURL": "https://direct.francemusique.fr/live/francemusique-lofi.mp3",
+    "description": "France Musique (Paris). Tags: classical, jazz, france, french.",
+    "logoURL": null,
+    "briefDescription": "classical, jazz, france, french — France."
   },
   {
     "id": "rb_14b795df421049e2b4911895",
@@ -456,28 +456,28 @@
     "briefDescription": "classic, foreign languages, gulf — Saudi Arabia."
   },
   {
-    "id": "arirang_radio",
-    "name": "Arirang Radio",
+    "id": "kr_tbs_efm",
+    "name": "TBS eFM",
     "city": "Seoul",
     "country": "South Korea",
     "latitude": 37.5665,
     "longitude": 126.978,
-    "streamURL": "https://amdlive-ch01.ctnd.com.edgesuite.net/arirang_3ch/smil:arirang_3ch.smil/playlist.m3u8",
-    "logoURL": "https://www.arirang.com/favicon.ico",
-    "briefDescription": "English-language radio from Korea with news, culture, and music, aimed at an international audience.",
-    "description": "English-language radio and culture programming from Korea."
+    "streamURL": "https://cdnefm.tbs.seoul.kr/tbs/_definst_/tbs_efm_web_360.smil/playlist.m3u8",
+    "logoURL": "",
+    "briefDescription": "english radio, news, culture, music — South Korea.",
+    "description": "English-language radio from Seoul with news, culture, and music programming."
   },
   {
-    "id": "ebs_fm",
-    "name": "EBS FM",
+    "id": "rb_f261309bc5174ed89217bd67",
+    "name": "MBC Seoul",
     "city": "Seoul",
     "country": "South Korea",
     "latitude": 37.5665,
     "longitude": 126.978,
-    "streamURL": "http://ebsonair.ebs.co.kr:1935/fmradiofamilypc/familypc1m/playlist.m3u8",
-    "logoURL": "https://www.ebs.co.kr/favicon.ico",
-    "briefDescription": "Educational Broadcasting System’s FM station with language learning, culture, and informative talk programs.",
-    "description": "Education and culture programming from EBS."
+    "streamURL": "https://5cf58a556f9b2.streamlock.net:443/live/_definst_/mp3:radio1/playlist.m3u8",
+    "description": "MBC Seoul Standard FM. Tags: music, talk, south korea, korean.",
+    "logoURL": null,
+    "briefDescription": "music, talk, south korea, korean — South Korea."
   },
   {
     "id": "listenmoe_kpop",
@@ -648,40 +648,40 @@
     "briefDescription": "Tampa community radio."
   },
   {
-    "id": "gh_peace_fm_1043",
-    "name": "Peace 104.3 FM",
+    "id": "rb_4716bebfbd744b5ea189348d",
+    "name": "Impact 97.9 FM",
+    "city": "Ampia Ajumako",
+    "country": "Ghana",
+    "latitude": 5.429,
+    "longitude": -0.757,
+    "streamURL": "https://a4.asurahosting.com:6950/radio.mp3",
+    "description": "Impact 97.9 FM (Ampia Ajumako). Tags: news, gospel, ghana, english.",
+    "logoURL": null,
+    "briefDescription": "news, gospel, ghana, english — Ghana."
+  },
+  {
+    "id": "gh_starr_fm_1035",
+    "name": "Starr FM 103.5",
     "city": "Accra",
     "country": "Ghana",
     "latitude": 5.6037,
     "longitude": -0.187,
-    "streamURL": "http://ample-zeno-08.radiojar.com/0u6609un2s5tv",
-    "description": "Peace 104.3 FM (Accra). Tags: talk, news, ghana, twi, english.",
-    "logoURL": null,
-    "briefDescription": "talk, news, ghana, twi, english — Ghana."
+    "streamURL": "http://stream.zenolive.com/ncwsgzh7hewtv",
+    "logoURL": "",
+    "briefDescription": "pop, news, talk, sports — Ghana.",
+    "description": "Urban radio from Accra with music, news, talk, and sports programming."
   },
   {
-    "id": "gh_asempa_fm_947",
-    "name": "Asempa FM 94.7",
-    "city": "Accra",
-    "country": "Ghana",
-    "latitude": 5.6037,
-    "longitude": -0.187,
-    "streamURL": "http://ample-zeno-01.radiojar.com/esqh40m4wewtv",
-    "description": "Asempa FM 94.7 (Accra). Tags: talk, sports, ghana, english.",
-    "logoURL": null,
-    "briefDescription": "talk, sports, ghana, english — Ghana."
-  },
-  {
-    "id": "ke_xfm_1055",
-    "name": "XFM 105.5",
-    "city": "Nairobi",
-    "country": "Kenya",
-    "latitude": -1.2864,
-    "longitude": 36.8172,
-    "streamURL": "http://streams.radioafricagroup.co.ke:88/broadwave.mp3?src=2&kbps=24",
-    "description": "XFM 105.5 (Nairobi). Tags: rock, alternative, kenya, english.",
-    "logoURL": null,
-    "briefDescription": "rock, alternative, kenya, english — Kenya."
+    "id": "za_safm_johannesburg",
+    "name": "SAFM",
+    "city": "Johannesburg",
+    "country": "South Africa",
+    "latitude": -26.2041,
+    "longitude": 28.0473,
+    "streamURL": "http://proradiocloud.antfarm.co.za/ant-lre-sabc/620e01258f5b49568546ff239ff2a32f/chunklist_w775303039.m3u8",
+    "logoURL": "",
+    "briefDescription": "news, talk, public radio — South Africa.",
+    "description": "South African public radio with news, talk, and national programming."
   },
   {
     "id": "ke_ghetto_radio_895",
@@ -696,16 +696,16 @@
     "briefDescription": "urban, hip-hop, kenya, english — Kenya."
   },
   {
-    "id": "ng_nigeria_info_993_lagos",
-    "name": "Nigeria Info FM 99.3 (Lagos)",
-    "city": "Lagos",
+    "id": "rb_d14bfa53a3284d0abfac4ffa",
+    "name": "Mega FM 89.1 Warri",
+    "city": "Warri",
     "country": "Nigeria",
-    "latitude": 6.5244,
-    "longitude": 3.3792,
-    "streamURL": "http://icestream.coolwazobiainfo.com:8000/niginfo-lagos",
-    "description": "Nigeria Info FM 99.3 (Lagos). Tags: talk, news, nigeria, english.",
+    "latitude": 5.554,
+    "longitude": 5.793,
+    "streamURL": "https://radio.sternhost.com:8130/radio.mp3",
+    "description": "Mega FM 89.1 Warri. Tags: variety, nigeria, english, local.",
     "logoURL": null,
-    "briefDescription": "talk, news, nigeria, english — Nigeria."
+    "briefDescription": "variety, nigeria, english, local — Nigeria."
   },
   {
     "id": "za_702_johannesburg",
@@ -720,28 +720,28 @@
     "briefDescription": "talk, news, south-africa, english — South Africa."
   },
   {
-    "id": "br_jovem_pan_sp",
-    "name": "Rádio Jovem Pan AM (São Paulo)",
-    "city": "São Paulo",
+    "id": "rb_9d962df52a3e4146a329707d",
+    "name": "Rádio Cultura 90 FM",
+    "city": "Fernandópolis",
     "country": "Brazil",
-    "latitude": -23.5558,
-    "longitude": -46.6396,
-    "streamURL": "https://16123.live.streamtheworld.com/JP_SP_AMAAC.aac",
-    "description": "Jovem Pan News (São Paulo). Tags: talk, news, brazil, portuguese.",
+    "latitude": -20.28,
+    "longitude": -50.247,
+    "streamURL": "https://azura1.cmaudioevideo.com:8020/radio.mp3",
+    "description": "Rádio Cultura 90 FM (Fernandópolis). Tags: rock, brazil, portuguese.",
     "logoURL": null,
-    "briefDescription": "talk, news, brazil, portuguese — Brazil."
+    "briefDescription": "rock, brazil, portuguese — Brazil."
   },
   {
-    "id": "br_radio_globo_rj",
-    "name": "Rádio Globo (Rio de Janeiro)",
-    "city": "Rio de Janeiro",
+    "id": "br_nova_brasil_fm_sp",
+    "name": "Nova Brasil FM",
+    "city": "São Paulo",
     "country": "Brazil",
-    "latitude": -22.9068,
-    "longitude": -43.1729,
-    "streamURL": "http://stream.sgr.globo.com/hls/aRGloboRJ/aRGloboRJ.m3u8",
-    "description": "Rádio Globo RJ. Tags: news, talk, sports, brazil, portuguese.",
-    "logoURL": null,
-    "briefDescription": "news, talk, sports, brazil, portuguese — Brazil."
+    "latitude": -23.5505,
+    "longitude": -46.6333,
+    "streamURL": "http://20823.live.streamtheworld.com/NOVABRASIL_SPAAC.aac",
+    "logoURL": "",
+    "briefDescription": "brazilian music, mpb, pop — Brazil.",
+    "description": "Brazilian music station from São Paulo featuring MPB, pop, and contemporary hits."
   },
   {
     "id": "br_nova_brasil_rj",
@@ -792,28 +792,28 @@
     "briefDescription": "rock, pop, argentina, spanish — Argentina."
   },
   {
-    "id": "in_air_raagam",
-    "name": "AIR Raagam",
-    "city": "New Delhi",
-    "country": "India",
-    "latitude": 28.6139,
-    "longitude": 77.209,
-    "streamURL": "http://airraagam-lh.akamaihd.net/i/airraagam_1@507820/master.m3u8",
-    "description": "All India Radio Raagam. Tags: classical, indian, india, hindi.",
+    "id": "rb_9589376d2be74101987b4aee",
+    "name": "88.3 Jia FM",
+    "city": "Singapore",
+    "country": "Singapore",
+    "latitude": 1.3521,
+    "longitude": 103.8198,
+    "streamURL": "https://playerservices.streamtheworld.com/api/livestream-redirect/883JIA.mp3",
+    "description": "88.3 Jia FM (Singapore). Tags: hits, mandarin, english, singapore.",
     "logoURL": null,
-    "briefDescription": "classical, indian, india, hindi — India."
+    "briefDescription": "hits, mandarin, english, singapore — Singapore."
   },
   {
-    "id": "in_radio_sai_asia",
-    "name": "Radio Sai Global Harmony (Asia Stream)",
-    "city": "Puttaparthi",
-    "country": "India",
-    "latitude": 14.165,
-    "longitude": 77.811,
-    "streamURL": "http://www.radiosai.org/Pages/AsiaStream.pls",
-    "description": "Radio Sai Global Harmony (Asia Stream). Tags: spiritual, talk, india, english.",
+    "id": "rb_ce8d9e43f47c40b3964fdfd4",
+    "name": "AXR Singapore",
+    "city": "Singapore",
+    "country": "Singapore",
+    "latitude": 1.3521,
+    "longitude": 103.8198,
+    "streamURL": "https://playerservices.streamtheworld.com/api/livestream-redirect/AXRAAC.aac",
+    "description": "AXR Singapore. Tags: adult contemporary, news, sport, asia, english.",
     "logoURL": null,
-    "briefDescription": "spiritual, talk, india, english — India."
+    "briefDescription": "adult contemporary, news, sport, english — Singapore."
   },
   {
     "id": "in_schizoid_prog_trance",

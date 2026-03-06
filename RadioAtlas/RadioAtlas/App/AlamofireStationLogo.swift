@@ -5,6 +5,8 @@ import UIKit
 
 // Third-Party Framework: Alamofire (via Swift Package Manager) is used here
 // to download station logo images and cache them for smooth scrolling.
+// The package contributes only this remote-image helper path; the core app
+// experience remains implemented with SwiftUI, MapKit, AVFoundation, and app code.
 
 @MainActor
 /// Downloads and caches remote station logos for list rows and cards.
@@ -16,6 +18,7 @@ final class StationLogoLoader: ObservableObject {
     private var request: DataRequest?
 
     /// Loads a station logo image from a URL string and caches the result.
+    /// Starts or restarts an image request for the provided URL string.
     func load(from urlString: String?) {
         guard let urlString, let url = URL(string: urlString) else {
             AppLog.info("StationLogoLoader.load: invalid URL \(urlString ?? "<nil>")")
@@ -69,6 +72,7 @@ final class StationLogoLoader: ObservableObject {
 }
 
 /// SwiftUI view that renders a station logo from a URL with a fallback placeholder.
+/// Small SwiftUI wrapper around `StationLogoLoader` that shows a spinner while loading.
 struct AlamofireStationLogoView: View {
     let logoURLString: String?
 

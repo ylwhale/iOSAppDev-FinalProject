@@ -9,6 +9,7 @@ import SwiftUI
 
 /// Entry view used for previews.
 /// The running app uses `RootView` from `RadioAtlasApp`.
+/// Lightweight preview container that mirrors the runtime root view.
 struct ContentView: View {
     var body: some View {
         RootView()

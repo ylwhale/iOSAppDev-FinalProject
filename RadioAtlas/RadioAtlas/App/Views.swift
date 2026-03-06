@@ -60,6 +60,7 @@ struct RootView: View {
     @State private var playbackErrorMessage: String? = nil
     @State private var didRunLaunchTasks: Bool = false
 
+    /// Bridges an optional playback error message into a Boolean alert binding.
     private var playbackAlertIsPresented: Binding<Bool> {
         Binding(
             get: { playbackErrorMessage != nil },
@@ -69,6 +70,7 @@ struct RootView: View {
         )
     }
 
+    /// Reusable help button shown in the main tabs to present usage instructions.
     private var helpButton: some View {
         Button {
             AppLog.action("Help opened")
@@ -244,6 +246,7 @@ struct RootView: View {
 // MARK: - Places Home (Countries + Genres dashboard)
 
 /// Summary information for browsing stations by country.
+/// Each card shows a country name, emoji flag, and station count.
 struct CountrySummary: Identifiable, Hashable {
     let id: String
     let name: String
@@ -252,6 +255,7 @@ struct CountrySummary: Identifiable, Hashable {
 }
 
 /// Summary information for browsing stations by genre tag.
+/// These values power the colorful genre buttons in the Places browser.
 struct GenreSummary: Identifiable, Hashable {
     let id: String
     let name: String
@@ -261,6 +265,7 @@ struct GenreSummary: Identifiable, Hashable {
 /// Display-friendly genre label.
 /// Some stations ship tags that begin with "And ..." which reads awkwardly in a list.
 /// We keep the raw string for filtering/matching, but clean it up for UI display.
+/// Cleans up raw genre strings for display without changing the underlying filter token.
 fileprivate func displayGenreName(_ raw: String) -> String {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     let lower = trimmed.lowercased()
@@ -268,6 +273,53 @@ fileprivate func displayGenreName(_ raw: String) -> String {
         return String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
     return trimmed
+}
+
+/// Creates a deterministic hash so unknown genres still map to a stable fallback color.
+fileprivate func stableGenreHash(_ genre: String) -> Int {
+    var hash = 0
+    for scalar in genre.unicodeScalars {
+        hash = (hash &* 31) &+ Int(scalar.value)
+    }
+    return abs(hash)
+}
+
+/// Returns a genre-specific accent color used by genre cards and chips throughout the UI.
+fileprivate func genreAccentColor(for rawGenre: String) -> Color {
+    let genre = rawGenre.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+    if genre.contains("pop") { return Color(red: 0.34, green: 0.80, blue: 0.45) }
+    if genre.contains("rock") { return Color(red: 0.31, green: 0.53, blue: 0.96) }
+    if genre.contains("elect") || genre.contains("edm") { return Color(red: 0.87, green: 0.36, blue: 0.71) }
+    if genre.contains("jazz") { return Color(red: 0.56, green: 0.42, blue: 0.93) }
+    if genre.contains("class") { return Color(red: 0.38, green: 0.47, blue: 0.92) }
+    if genre.contains("hip") || genre.contains("rap") { return Color(red: 0.98, green: 0.58, blue: 0.23) }
+    if genre.contains("news") { return Color(red: 0.53, green: 0.56, blue: 0.67) }
+    if genre.contains("talk") { return Color(red: 0.50, green: 0.62, blue: 0.80) }
+    if genre.contains("sport") { return Color(red: 0.25, green: 0.74, blue: 0.74) }
+    if genre.contains("latin") { return Color(red: 0.98, green: 0.52, blue: 0.43) }
+    if genre.contains("america") || genre.contains("américa") { return Color(red: 0.44, green: 0.66, blue: 0.91) }
+    if genre.contains("culture") { return Color(red: 0.79, green: 0.49, blue: 0.86) }
+    if genre.contains("stream") { return Color(red: 0.36, green: 0.74, blue: 0.88) }
+    if genre.contains("music") { return Color(red: 0.96, green: 0.56, blue: 0.69) }
+    if genre.contains("india") { return Color(red: 0.97, green: 0.69, blue: 0.27) }
+    if genre.contains("brazil") { return Color(red: 0.41, green: 0.74, blue: 0.40) }
+    if genre.contains("argentina") { return Color(red: 0.47, green: 0.76, blue: 0.93) }
+
+    let palette: [Color] = [
+        Color(red: 0.95, green: 0.55, blue: 0.61),
+        Color(red: 0.98, green: 0.67, blue: 0.32),
+        Color(red: 0.86, green: 0.77, blue: 0.28),
+        Color(red: 0.45, green: 0.79, blue: 0.43),
+        Color(red: 0.27, green: 0.79, blue: 0.68),
+        Color(red: 0.34, green: 0.70, blue: 0.92),
+        Color(red: 0.42, green: 0.58, blue: 0.95),
+        Color(red: 0.62, green: 0.52, blue: 0.94),
+        Color(red: 0.84, green: 0.49, blue: 0.89),
+        Color(red: 0.95, green: 0.47, blue: 0.73)
+    ]
+
+    return palette[stableGenreHash(genre) % palette.count]
 }
 
 /// Card-like header row with an optional "see all" navigation affordance.
@@ -314,6 +366,7 @@ struct PlacesHomeView: View {
     @State private var genresExpanded: Bool = false
 
     /// Computes the favorites identifier used for a station.
+    /// Converts a station model into the shared favorites identifier format used across the app.
     private func stationFavoriteID(_ station: RadioStation) -> String { "station_" + station.id }
 
     // ActiveSheet defines custom cases and helpers used by this feature area.
@@ -461,14 +514,7 @@ struct PlacesHomeView: View {
     }
 
     private func genreTint(for genre: String) -> Color {
-        let g = genre.lowercased()
-        if g.contains("pop") { return .green }
-        if g.contains("rock") { return .blue }
-        if g.contains("elect") || g.contains("edm") { return .red }
-        if g.contains("jazz") { return .purple }
-        if g.contains("class") { return .indigo }
-        if g.contains("hip") || g.contains("rap") { return .orange }
-        return .gray
+        genreAccentColor(for: genre)
     }
 
     private var genreSummaries: [GenreSummary] {
@@ -488,6 +534,7 @@ struct PlacesHomeView: View {
             }
     }
 
+    /// Opens a station from the Places dashboard and records the action for grading logs.
     private func openStation(_ station: RadioStation) {
         AppLog.action("Open station from Home: \(station.id) \(station.name)")
         activeSheet = .station(station)
@@ -736,7 +783,7 @@ private struct CountryCardView: View {
     var body: some View {
         VStack(spacing: 10) {
             Text(country.flagEmoji)
-                .font(.system(size: 34))
+                .font(.system(size: 40))
             Text(country.name)
                 .font(.headline)
                 .foregroundStyle(.primary)
@@ -750,6 +797,7 @@ private struct CountryCardView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
         )
+        .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 4)
     }
 }
 
@@ -761,7 +809,7 @@ private struct GenreCardView: View {
     var body: some View {
         VStack(spacing: 10) {
             Text(icon)
-                .font(.system(size: 32))
+                .font(.system(size: 36))
             Text(title)
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(.white)
@@ -771,6 +819,11 @@ private struct GenreCardView: View {
         .frame(maxWidth: .infinity, minHeight: 120)
         .padding(.vertical, 12)
         .background(tint.opacity(0.82), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.12), radius: 10, x: 0, y: 4)
     }
 }
 
@@ -891,14 +944,7 @@ struct GenresBrowserView: View {
     }
 
     private func tint(for genre: String) -> Color {
-        let g = genre.lowercased()
-        if g.contains("pop") { return .green }
-        if g.contains("rock") { return .blue }
-        if g.contains("elect") || g.contains("edm") { return .red }
-        if g.contains("jazz") { return .purple }
-        if g.contains("class") { return .indigo }
-        if g.contains("hip") || g.contains("rap") { return .orange }
-        return .gray
+        genreAccentColor(for: genre)
     }
 
     private var filtered: [GenreSummary] {
@@ -978,6 +1024,7 @@ struct CountryStationsListView: View {
     @State private var searchText: String = ""
     @State private var scope: ListScope = .all
 
+    /// Converts a station model into the shared favorites identifier format used across the app.
     private func stationFavoriteID(_ station: RadioStation) -> String { "station_" + station.id }
 
     private var filteredStations: [RadioStation] {
@@ -1039,6 +1086,7 @@ struct GenreStationsListView: View {
     @State private var searchText: String = ""
     @State private var scope: ListScope = .all
 
+    /// Converts a station model into the shared favorites identifier format used across the app.
     private func stationFavoriteID(_ station: RadioStation) -> String { "station_" + station.id }
 
     private var filteredStations: [RadioStation] {
@@ -1182,6 +1230,7 @@ struct PlacesMapTabView: View {
     }
 
     /// Starts a MapKit place search for the provided query text.
+    /// Runs a map-based place search and records the request/result details for logging.
     private func startPlaceSearch(for query: String) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -1227,6 +1276,7 @@ struct PlacesMapTabView: View {
     }
 
     /// Creates and persists a new user place pin from a selected search result.
+    /// Converts a selected map search result into a user-created place pin stored by the app.
     private func addPlacePin(from mapItem: MKMapItem) {
         let coord = mapItem.placemark.coordinate
         guard coord.latitude.isFinite, coord.longitude.isFinite else { return }
@@ -1281,6 +1331,7 @@ struct PlacesMapTabView: View {
     }
 
     /// Selects a random station and animates the map camera to its location.
+    /// Picks a random station from the active filter set and recenters the map on it.
     private func flyToRandomStation() {
         let candidates = trimmedStationQuery.isEmpty ? stations : matchedStations
         guard let picked = candidates.randomElement() else {
@@ -1576,6 +1627,7 @@ struct RecentTabView: View {
     private var recentItems: [RecentItem] { recents.items }
 
     /// Computes the favorites identifier used for a station.
+    /// Converts a station model into the shared favorites identifier format used across the app.
     private func stationFavoriteID(_ station: RadioStation) -> String { "station_" + station.id }
 
     private var favoritePlaces: [Place] {
@@ -2187,16 +2239,173 @@ struct MapStationSearchResultsCard: View {
     let onSelectStation: (RadioStation) -> Void
     let onSelectPlace: (Place) -> Void
 
+    /// Controls whether the inline results card shows every matching place.
+    @State private var showAllPlaces: Bool = false
+    /// Controls whether the inline results card shows every matching station.
+    @State private var showAllStations: Bool = false
+
+    private let collapsedRowLimit: Int = 4
+
     private var trimmed: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var visiblePlaces: [Place] {
-        Array(places.prefix(4))
+        showAllPlaces ? places : Array(places.prefix(collapsedRowLimit))
     }
 
     private var visibleStations: [RadioStation] {
-        Array(stations.prefix(4))
+        showAllStations ? stations : Array(stations.prefix(collapsedRowLimit))
+    }
+
+    private var usesExpandedLayout: Bool {
+        showAllPlaces || showAllStations
+    }
+
+    @ViewBuilder
+    private var resultsContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !visiblePlaces.isEmpty {
+                Text("Places")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 4)
+
+                ForEach(Array(visiblePlaces.enumerated()), id: \.element.id) { idx, place in
+                    Button {
+                        onSelectPlace(place)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: place.iconSystemName)
+                                .foregroundColor(.secondary)
+                                .frame(width: 28, height: 28)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(place.name)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+
+                                Text(place.subtitle.isEmpty ? place.effectiveCategory.displayName : place.subtitle)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Place result: \(place.name)")
+                    .accessibilityValue(place.effectiveCategory.displayName)
+                    .accessibilityHint("Opens the place details")
+
+                    if idx != visiblePlaces.count - 1 {
+                        Divider()
+                            .padding(.leading, 12 + 28 + 12)
+                    }
+                }
+
+                if places.count > collapsedRowLimit {
+                    Button {
+                        showAllPlaces.toggle()
+                        AppLog.action(showAllPlaces ? "Expanded map search places list" : "Collapsed map search places list")
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(showAllPlaces ? "Show fewer places" : "+ \(places.count - collapsedRowLimit) more places")
+                            Image(systemName: showAllPlaces ? "chevron.up" : "chevron.down")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.accentColor)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(showAllPlaces ? "Show fewer place results" : "Show all place results")
+                    .accessibilityHint("Expands or collapses the matching places list")
+                }
+            }
+
+            if !visiblePlaces.isEmpty && !visibleStations.isEmpty {
+                Divider()
+                    .padding(.vertical, 4)
+            }
+
+            if !visibleStations.isEmpty {
+                Text("Radio stations")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 4)
+
+                ForEach(Array(visibleStations.enumerated()), id: \.element.id) { idx, station in
+                    Button {
+                        onSelectStation(station)
+                    } label: {
+                        HStack(spacing: 12) {
+                            StationLogoView(logoURLString: station.logoURL)
+                                .frame(width: 28, height: 28)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(station.name)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+                                Text(station.country)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Radio station result: \(station.name)")
+                    .accessibilityValue(station.country)
+                    .accessibilityHint("Opens the station details")
+
+                    if idx != visibleStations.count - 1 {
+                        Divider()
+                            .padding(.leading, 12 + 28 + 12)
+                    }
+                }
+
+                if stations.count > collapsedRowLimit {
+                    Button {
+                        showAllStations.toggle()
+                        AppLog.action(showAllStations ? "Expanded map search stations list" : "Collapsed map search stations list")
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(showAllStations ? "Show fewer stations" : "+ \(stations.count - collapsedRowLimit) more stations")
+                            Image(systemName: showAllStations ? "chevron.up" : "chevron.down")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.accentColor)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(showAllStations ? "Show fewer station results" : "Show all station results")
+                    .accessibilityHint("Expands or collapses the matching radio stations list")
+                }
+            }
+        }
     }
 
     var body: some View {
@@ -2214,127 +2423,14 @@ struct MapStationSearchResultsCard: View {
                         Spacer(minLength: 0)
                     }
                 } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
-                            if !visiblePlaces.isEmpty {
-                                Text("Places")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundColor(.secondary)
-                                    .padding(.horizontal, 12)
-                                    .padding(.top, 10)
-                                    .padding(.bottom, 4)
-
-                                ForEach(Array(visiblePlaces.enumerated()), id: \.element.id) { idx, place in
-                                    Button {
-                                        onSelectPlace(place)
-                                    } label: {
-                                        HStack(spacing: 12) {
-                                            Image(systemName: place.iconSystemName)
-                                                .foregroundColor(.secondary)
-                                                .frame(width: 28, height: 28)
-
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text(place.name)
-                                                    .font(.subheadline.weight(.semibold))
-                                                    .foregroundColor(.primary)
-                                                    .lineLimit(1)
-
-                                                Text(place.subtitle.isEmpty ? place.effectiveCategory.displayName : place.subtitle)
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondary)
-                                                    .lineLimit(1)
-                                            }
-
-                                            Spacer(minLength: 0)
-                                            Image(systemName: "chevron.right")
-                                                .font(.caption.weight(.semibold))
-                                                .foregroundColor(.secondary)
-                                        }
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 10)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("Place result: \(place.name)")
-                                    .accessibilityValue(place.effectiveCategory.displayName)
-                                    .accessibilityHint("Opens the place details")
-
-                                    if idx != visiblePlaces.count - 1 {
-                                        Divider()
-                                            .padding(.leading, 12 + 28 + 12)
-                                    }
-                                }
-
-                                if places.count > visiblePlaces.count {
-                                    Text("+ \(places.count - visiblePlaces.count) more places")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 10)
-                                }
-                            }
-
-                            if !visiblePlaces.isEmpty && !visibleStations.isEmpty {
-                                Divider()
-                                    .padding(.vertical, 4)
-                            }
-
-                            if !visibleStations.isEmpty {
-                                Text("Radio stations")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundColor(.secondary)
-                                    .padding(.horizontal, 12)
-                                    .padding(.top, 10)
-                                    .padding(.bottom, 4)
-
-                                ForEach(Array(visibleStations.enumerated()), id: \.element.id) { idx, station in
-                                    Button {
-                                        onSelectStation(station)
-                                    } label: {
-                                        HStack(spacing: 12) {
-                                            StationLogoView(logoURLString: station.logoURL)
-                                                .frame(width: 28, height: 28)
-
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text(station.name)
-                                                    .font(.subheadline.weight(.semibold))
-                                                    .foregroundColor(.primary)
-                                                    .lineLimit(1)
-                                                Text(station.country)
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondary)
-                                                    .lineLimit(1)
-                                            }
-
-                                            Spacer(minLength: 0)
-                                            Image(systemName: "chevron.right")
-                                                .font(.caption.weight(.semibold))
-                                                .foregroundColor(.secondary)
-                                        }
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 10)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("Radio station result: \(station.name)")
-                                    .accessibilityValue(station.country)
-                                    .accessibilityHint("Opens the station details")
-
-                                    if idx != visibleStations.count - 1 {
-                                        Divider()
-                                            .padding(.leading, 12 + 28 + 12)
-                                    }
-                                }
-
-                                if stations.count > visibleStations.count {
-                                    Text("+ \(stations.count - visibleStations.count) more stations")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 10)
-                                }
-                            }
+                    if usesExpandedLayout {
+                        resultsContent
+                    } else {
+                        ScrollView {
+                            resultsContent
                         }
+                        .frame(maxHeight: 220)
                     }
-                    .frame(maxHeight: 220)
                 }
             }
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -2342,6 +2438,10 @@ struct MapStationSearchResultsCard: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
             )
+            .onChange(of: trimmed) { _, _ in
+                showAllPlaces = false
+                showAllStations = false
+            }
         }
     }
 }

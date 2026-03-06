@@ -29,6 +29,7 @@ struct RadioAtlasApp: App {
 }
 
 /// Root container used to observe lifecycle (scenePhase) changes for logging and multi-tasking behavior.
+/// Scene-aware wrapper that keeps lifecycle logging close to the visible root view.
 struct AppRootContainer: View {
     @Environment(\.scenePhase) private var scenePhase
 
