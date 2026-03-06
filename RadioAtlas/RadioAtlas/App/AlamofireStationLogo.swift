@@ -3,6 +3,9 @@ import Combine
 import Alamofire
 import UIKit
 
+// Third-Party Framework: Alamofire (via Swift Package Manager) is used here
+// to download station logo images and cache them for smooth scrolling.
+
 @MainActor
 /// Downloads and caches remote station logos for list rows and cards.
 final class StationLogoLoader: ObservableObject {

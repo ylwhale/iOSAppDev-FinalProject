@@ -497,7 +497,7 @@ extension RadioStation {
             return "Asia-Pacific"
         case "United Arab Emirates", "Saudi Arabia", "Qatar", "Israel", "Turkey":
             return "Middle East"
-        case "South Africa", "Kenya", "Nigeria", "Egypt", "Morocco":
+        case "South Africa", "Kenya", "Nigeria", "Egypt", "Morocco", "Ghana":
             return "Africa"
         default:
             if latitude >= 15, latitude <= 72, longitude >= -170, longitude <= -30 {

@@ -127,7 +127,7 @@ struct RootView: View {
         ZStack {
             TabView(selection: $selectedTab) {
                 NavigationStack {
-                    PlacesListView(places: $places, stations: $stations, favorites: $favorites)
+                    PlacesHomeView(places: $places, stations: $stations, favorites: $favorites)
                 }
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) { helpButton }
@@ -153,7 +153,7 @@ struct RootView: View {
                     showHelp = true
                 })
                 .tabItem {
-                    Label("Recent", systemImage: "clock")
+                    Label("Favorites", systemImage: "star")
                 }
                 .tag(RootTab.recent)
             }
@@ -239,6 +239,859 @@ struct RootView: View {
         }
     }
 }
+
+
+// MARK: - Places Home (Countries + Genres dashboard)
+
+/// Summary information for browsing stations by country.
+struct CountrySummary: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let count: Int
+    let flagEmoji: String
+}
+
+/// Summary information for browsing stations by genre tag.
+struct GenreSummary: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let count: Int
+}
+
+/// Display-friendly genre label.
+/// Some stations ship tags that begin with "And ..." which reads awkwardly in a list.
+/// We keep the raw string for filtering/matching, but clean it up for UI display.
+fileprivate func displayGenreName(_ raw: String) -> String {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    let lower = trimmed.lowercased()
+    if lower.hasPrefix("and ") {
+        return String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    return trimmed
+}
+
+/// Card-like header row with an optional "see all" navigation affordance.
+private struct SectionHeaderLink<Destination: View>: View {
+    let title: String
+    let destination: Destination
+
+    init(_ title: String, destination: Destination) {
+        self.title = title
+        self.destination = destination
+    }
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+            Spacer()
+            NavigationLink {
+                destination
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityLabel("See all \(title)")
+        }
+    }
+}
+
+/// Home-style Places tab: nearby stations + quick entry points for countries and genres.
+struct PlacesHomeView: View {
+    @Binding var places: [Place]
+    @Binding var stations: [RadioStation]
+    @Binding var favorites: Set<String>
+
+    @StateObject private var locationManager = LocationManager()
+
+    @State private var activeSheet: ActiveSheet? = nil
+    @State private var placeDetent: PresentationDetent = .height(360)
+    @State private var stationDetent: PresentationDetent = .height(340)
+
+    @State private var countriesExpanded: Bool = false
+    @State private var genresExpanded: Bool = false
+
+    /// Computes the favorites identifier used for a station.
+    private func stationFavoriteID(_ station: RadioStation) -> String { "station_" + station.id }
+
+    // ActiveSheet defines custom cases and helpers used by this feature area.
+    enum ActiveSheet: Identifiable {
+        case place(Place)
+        case station(RadioStation)
+
+        var id: String {
+            switch self {
+            case .place(let p): return "place_" + p.id
+            case .station(let s): return "station_" + s.id
+            }
+        }
+    }
+
+    
+    /// Normalizes a country display name so it can be matched reliably against Apple's localized ISO region names.
+    /// This avoids cases like "Antigua And Barbuda" vs. Apple's "Antigua & Barbuda", and trims prefixes like "The ".
+    private static func normalizedCountryKey(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        s = s.replacingOccurrences(of: "’", with: "'")
+        s = s.replacingOccurrences(of: "&", with: "and")
+        s = s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+        s = s.lowercased()
+
+        if s.hasPrefix("the ") {
+            s = String(s.dropFirst(4))
+        }
+
+        // Keep letters/numbers/spaces only.
+        s = s.replacingOccurrences(of: "[^a-z0-9 ]", with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+/// Country name (localized) -> ISO region code mapping cache.
+    private static let countryNameToRegionCode: [String: String] = {
+        var map: [String: String] = [:]
+        let locale = Locale(identifier: "en_US_POSIX")
+        // Locale.isoRegionCodes was deprecated in iOS 16.
+        // Use Locale.Region.isoRegions (Locale.Region) to enumerate the ISO-3166 region set.
+        for region in Locale.Region.isoRegions {
+            let code = region.identifier
+            if let name = locale.localizedString(forRegionCode: code) {
+                map[Self.normalizedCountryKey(name)] = code
+            }
+        }
+        return map
+    }()
+
+    /// Converts an ISO region code to a flag emoji (e.g. "US" -> 🇺🇸).
+    private func flagEmoji(from regionCode: String) -> String {
+        let base: UInt32 = 127397
+        var scalars: [UnicodeScalar] = []
+        for v in regionCode.uppercased().unicodeScalars {
+            guard let scalar = UnicodeScalar(base + v.value) else { continue }
+            scalars.append(scalar)
+        }
+        return String(String.UnicodeScalarView(scalars))
+    }
+
+    private func flagEmoji(for countryName: String) -> String {
+        let key = Self.normalizedCountryKey(countryName)
+
+        // Manual overrides for cases where Apple's localized region names don't round-trip cleanly.
+        // (This is especially common for "China" where iOS may report "China mainland".)
+        let overrides: [String: String] = [
+            "china": "CN",
+            "china mainland": "CN",
+            "mainland china": "CN",
+            "people's republic of china": "CN",
+            "prc": "CN",
+            "uae": "AE",
+            "united arab emirates": "AE",
+            "antigua and barbuda": "AG",
+            "bosnia and herzegovina": "BA"
+        ]
+
+        if let override = overrides[key] {
+            return flagEmoji(from: override)
+        }
+
+        guard let code = Self.countryNameToRegionCode[key] else { return "🏳️" }
+        return flagEmoji(from: code)
+    }
+
+    private var nearbyStations: [RadioStation] {
+        // Prefer nearest-first if we have a user coordinate. Fall back to alphabetical.
+        guard let coord = locationManager.coordinate else {
+            return stations.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }.prefix(10).map { $0 }
+        }
+        let sorted = stations.sorted { (lhs, rhs) in
+            let dl = lhs.distance(from: coord) ?? Double.greatestFiniteMagnitude
+            let dr = rhs.distance(from: coord) ?? Double.greatestFiniteMagnitude
+            if dl != dr { return dl < dr }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+        return Array(sorted.prefix(10))
+    }
+
+    private var countrySummaries: [CountrySummary] {
+        let grouped = Dictionary(grouping: stations.filter { !$0.country.isEmpty }, by: { $0.country })
+        return grouped
+            .map { (key: $0.key, count: $0.value.count) }
+            .sorted { lhs, rhs in
+                if lhs.count != rhs.count { return lhs.count > rhs.count }
+                return lhs.key.localizedCaseInsensitiveCompare(rhs.key) == .orderedAscending
+            }
+            .map { CountrySummary(id: $0.key, name: $0.key, count: $0.count, flagEmoji: flagEmoji(for: $0.key)) }
+    }
+
+    private func genreIcon(for genre: String) -> String {
+        let g = genre.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        // Common genre shortcuts
+        if g.contains("pop") { return "🍿" }
+        if g.contains("rock") { return "🎸" }
+        if g.contains("elect") || g.contains("edm") { return "🎛️" }
+        if g.contains("jazz") { return "🎷" }
+        if g.contains("class") { return "🎻" }
+        if g.contains("hip") || g.contains("rap") { return "🎤" }
+        if g.contains("news") { return "📰" }
+        if g.contains("talk") { return "💬" }
+        if g.contains("sport") { return "🏟️" }
+        if g.contains("latin") { return "💃" }
+        if g.contains("america") || g.contains("américa") { return "🌎" }
+        if g.contains("culture") { return "🎭" }
+
+        // Deterministic "fun" fallback so non-standard tags don't all look the same.
+        let palette: [String] = [
+            "🎧", "🎶", "🎼", "📻", "🎙️", "💿", "🪩", "✨", "🌙", "☕️",
+            "🌿", "🌊", "🔥", "🧠", "🛰️", "🎹", "🥁", "🎺", "🎻", "🎸",
+            "🪕", "🎷", "🪘", "🎤", "🔊", "🎛️", "🎚️", "📡", "📺", "📼",
+            "🗺️", "🧭", "🌎", "🌍", "🌏", "🏙️", "🌃", "🚗", "🚇", "✈️",
+            "🚀", "🧘", "🏃", "📚", "📝", "🧩", "🪄", "🧊", "🌈", "🌻",
+            "🍀", "🍉", "🍫", "🍣", "🍜", "🍕", "🌮", "🥐", "🍵", "🥤"
+        ]
+
+        var h: Int = 0
+        for u in g.unicodeScalars {
+            h = (h &* 31) &+ Int(u.value)
+        }
+        let idx = abs(h) % palette.count
+        return palette[idx]
+    }
+
+    private func genreTint(for genre: String) -> Color {
+        let g = genre.lowercased()
+        if g.contains("pop") { return .green }
+        if g.contains("rock") { return .blue }
+        if g.contains("elect") || g.contains("edm") { return .red }
+        if g.contains("jazz") { return .purple }
+        if g.contains("class") { return .indigo }
+        if g.contains("hip") || g.contains("rap") { return .orange }
+        return .gray
+    }
+
+    private var genreSummaries: [GenreSummary] {
+        var counts: [String: Int] = [:]
+        for station in stations {
+            for label in station.moodGenreLabels {
+                let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                counts[trimmed, default: 0] += 1
+            }
+        }
+        return counts
+            .map { GenreSummary(id: $0.key, name: $0.key, count: $0.value) }
+            .sorted { lhs, rhs in
+                if lhs.count != rhs.count { return lhs.count > rhs.count }
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+    }
+
+    private func openStation(_ station: RadioStation) {
+        AppLog.action("Open station from Home: \(station.id) \(station.name)")
+        activeSheet = .station(station)
+    }
+
+    private var topCountries: [CountrySummary] { Array(countrySummaries.prefix(4)) }
+    private var moreCountries: [CountrySummary] {
+        let all = countrySummaries
+        return all.count > 4 ? Array(all.dropFirst(4)) : []
+    }
+
+    private var topGenres: [GenreSummary] { Array(genreSummaries.prefix(3)) }
+    private var moreGenres: [GenreSummary] {
+        let all = genreSummaries
+        return all.count > 3 ? Array(all.dropFirst(3)) : []
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                // Nearby stations carousel
+                if !stations.isEmpty {
+                    Text("Nearby Stations")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.primary)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 14) {
+                            ForEach(nearbyStations) { station in
+                                Button {
+                                    openStation(station)
+                                } label: {
+                                    NearbyStationCardView(station: station)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(station.name)
+                                .accessibilityHint("Opens the station player")
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+
+                // Countries
+                if !countrySummaries.isEmpty {
+                    SectionHeaderLink("Countries", destination: CountriesBrowserView(
+                        countries: countrySummaries,
+                        stations: $stations,
+                        favorites: $favorites
+                    ))
+
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                        ForEach(topCountries) { c in
+                            NavigationLink {
+                                CountryStationsListView(country: c.name, stations: $stations, favorites: $favorites)
+                            } label: {
+                                CountryCardView(country: c)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    if !moreCountries.isEmpty {
+                        DisclosureGroup(isExpanded: $countriesExpanded) {
+                            VStack(spacing: 0) {
+                                ForEach(moreCountries) { c in
+                                    NavigationLink {
+                                        CountryStationsListView(country: c.name, stations: $stations, favorites: $favorites)
+                                    } label: {
+                                        HStack(spacing: 10) {
+                                            Text(c.flagEmoji)
+                                            Text(c.name)
+                                                .foregroundStyle(.primary)
+                                            Spacer()
+                                            Image(systemName: "chevron.right")
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        .padding(.vertical, 10)
+                                        .contentShape(Rectangle())
+                                    }
+                                    Divider()
+                                }
+                            }
+                            .padding(.top, 6)
+                        } label: {
+                            Text("More Countries")
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+
+                // Genres
+                if !genreSummaries.isEmpty {
+                    SectionHeaderLink("Genres", destination: GenresBrowserView(
+                        genres: genreSummaries,
+                        stations: $stations,
+                        favorites: $favorites
+                    ))
+
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                        ForEach(topGenres) { g in
+                            NavigationLink {
+                                GenreStationsListView(genre: g.name, stations: $stations, favorites: $favorites)
+                            } label: {
+                                GenreCardView(
+                                    title: displayGenreName(g.name),
+                                    icon: genreIcon(for: g.name),
+                                    tint: genreTint(for: g.name)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    if !moreGenres.isEmpty {
+                        DisclosureGroup(isExpanded: $genresExpanded) {
+                            VStack(spacing: 0) {
+                                ForEach(moreGenres) { g in
+                                    NavigationLink {
+                                        GenreStationsListView(genre: g.name, stations: $stations, favorites: $favorites)
+                                    } label: {
+                                        HStack(spacing: 10) {
+                                            Text(genreIcon(for: g.name))
+                                            Text(displayGenreName(g.name))
+                                                .foregroundStyle(.primary)
+                                            Spacer()
+                                            Image(systemName: "chevron.right")
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        .padding(.vertical, 10)
+                                        .contentShape(Rectangle())
+                                    }
+                                    Divider()
+                                }
+                            }
+                            .padding(.top, 6)
+                        } label: {
+                            Text("More Genres")
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+
+                // Keep the legacy "Places" browsing feature accessible without changing its behavior.
+                NavigationLink {
+                    PlacesListView(places: $places, stations: $stations, favorites: $favorites)
+                } label: {
+                    HStack {
+                        Image(systemName: "list.bullet")
+                        Text("Browse All (Filters)")
+                            .font(.headline)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 3)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 8)
+                .accessibilityHint("Opens the full list view with filters for places and radio stations")
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 10)
+        }
+        // This is the Places tab landing page (dashboard-style), so the large title should match the tab label.
+        .navigationTitle("Places")
+        .onAppear {
+            AppLog.info("PlacesHomeView appeared")
+            locationManager.requestOneShotLocation()
+        }
+        .onChange(of: activeSheet?.id) { _, _ in
+            placeDetent = .height(360)
+            stationDetent = .height(340)
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .place(let place):
+                PlaceMusicModalView(place: place, favorites: $favorites, detent: $placeDetent, onDelete: {
+                    places.removeAll { $0.id == place.id }
+                    activeSheet = nil
+                })
+                    .presentationDetents([.height(360), .medium], selection: $placeDetent)
+            case .station(let station):
+                StationMusicModalView(station: station, favorites: $favorites, detent: $stationDetent, onDelete: {
+                    stations.removeAll { $0.id == station.id }
+                    activeSheet = nil
+                })
+                    .presentationDetents([.height(340), .medium], selection: $stationDetent)
+            }
+        }
+    }
+}
+
+private struct NearbyStationCardView: View {
+    let station: RadioStation
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            StationLogoView(logoURLString: station.logoURL)
+                .frame(width: 92, height: 92)
+                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+                )
+
+            Text(station.name)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Text(station.country)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(width: 150, alignment: .leading)
+        .padding(12)
+        .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 3)
+    }
+}
+
+private struct CountryCardView: View {
+    let country: CountrySummary
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text(country.flagEmoji)
+                .font(.system(size: 34))
+            Text(country.name)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+        }
+        .frame(maxWidth: .infinity, minHeight: 110)
+        .padding(.vertical, 12)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+        )
+    }
+}
+
+private struct GenreCardView: View {
+    let title: String
+    let icon: String
+    let tint: Color
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text(icon)
+                .font(.system(size: 32))
+            Text(title)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+        }
+        .frame(maxWidth: .infinity, minHeight: 120)
+        .padding(.vertical, 12)
+        .background(tint.opacity(0.82), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+}
+
+/// All countries browser screen (grid preview + list), matching the "Countries" screenshot style.
+struct CountriesBrowserView: View {
+    let countries: [CountrySummary]
+    @Binding var stations: [RadioStation]
+    @Binding var favorites: Set<String>
+
+    @State private var query: String = ""
+
+    private var filtered: [CountrySummary] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return countries }
+        return countries.filter { $0.name.localizedCaseInsensitiveContains(trimmed) }
+    }
+
+    private var top: [CountrySummary] { Array(filtered.prefix(6)) }
+    private var rest: [CountrySummary] { filtered.count > 6 ? Array(filtered.dropFirst(6)) : [] }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    ForEach(top) { c in
+                        NavigationLink {
+                            CountryStationsListView(country: c.name, stations: $stations, favorites: $favorites)
+                        } label: {
+                            CountryCardView(country: c)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                if !rest.isEmpty {
+                    Text("More Countries")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .padding(.top, 8)
+
+                    VStack(spacing: 0) {
+                        ForEach(rest) { c in
+                            NavigationLink {
+                                CountryStationsListView(country: c.name, stations: $stations, favorites: $favorites)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Text(c.flagEmoji)
+                                    Text(c.name)
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.vertical, 12)
+                                .contentShape(Rectangle())
+                            }
+                            Divider()
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 10)
+        }
+        .navigationTitle("Countries")
+        .searchable(text: $query, prompt: "Search")
+        .onChange(of: query) { _, newValue in
+            AppLog.action("Countries search query: \(newValue)")
+        }
+    }
+}
+
+/// All genres browser screen (grid preview + list), matching the "Genres" card style.
+struct GenresBrowserView: View {
+    let genres: [GenreSummary]
+    @Binding var stations: [RadioStation]
+    @Binding var favorites: Set<String>
+
+    @State private var query: String = ""
+
+    private func icon(for genre: String) -> String {
+        let g = genre.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        // Common genre shortcuts
+        if g.contains("pop") { return "🍿" }
+        if g.contains("rock") { return "🎸" }
+        if g.contains("elect") || g.contains("edm") { return "🎛️" }
+        if g.contains("jazz") { return "🎷" }
+        if g.contains("class") { return "🎻" }
+        if g.contains("hip") || g.contains("rap") { return "🎤" }
+        if g.contains("news") { return "📰" }
+        if g.contains("talk") { return "💬" }
+        if g.contains("sport") { return "🏟️" }
+        if g.contains("latin") { return "💃" }
+        if g.contains("america") || g.contains("américa") { return "🌎" }
+        if g.contains("culture") { return "🎭" }
+        if g.contains("stream") { return "📡" }
+
+        // Deterministic "fun" fallback so non-standard tags don't all look the same.
+        let palette: [String] = [
+            "🎧", "🎶", "🎼", "📻", "🎙️", "💿", "🪩", "✨", "🌙", "☕️",
+            "🌿", "🌊", "🔥", "🧠", "🛰️", "🎹", "🥁", "🎺", "🎻", "🎸",
+            "🪕", "🎷", "🪘", "🎤", "🔊", "🎛️", "🎚️", "📡", "📺", "📼",
+            "🗺️", "🧭", "🌎", "🌍", "🌏", "🏙️", "🌃", "🚗", "🚇", "✈️",
+            "🚀", "🧘", "🏃", "📚", "📝", "🧩", "🪄", "🧊", "🌈", "🌻",
+            "🍀", "🍉", "🍫", "🍣", "🍜", "🍕", "🌮", "🥐", "🍵", "🥤"
+        ]
+
+        var h: Int = 0
+        for u in g.unicodeScalars {
+            h = (h &* 31) &+ Int(u.value)
+        }
+        let idx = abs(h) % palette.count
+        return palette[idx]
+    }
+
+    private func tint(for genre: String) -> Color {
+        let g = genre.lowercased()
+        if g.contains("pop") { return .green }
+        if g.contains("rock") { return .blue }
+        if g.contains("elect") || g.contains("edm") { return .red }
+        if g.contains("jazz") { return .purple }
+        if g.contains("class") { return .indigo }
+        if g.contains("hip") || g.contains("rap") { return .orange }
+        return .gray
+    }
+
+    private var filtered: [GenreSummary] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return genres }
+        // Match on both the raw label and the cleaned display label.
+        return genres.filter {
+            $0.name.localizedCaseInsensitiveContains(trimmed) ||
+            displayGenreName($0.name).localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
+    private var top: [GenreSummary] { Array(filtered.prefix(9)) }
+    private var rest: [GenreSummary] { filtered.count > 9 ? Array(filtered.dropFirst(9)) : [] }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    ForEach(top) { g in
+                        NavigationLink {
+                            GenreStationsListView(genre: g.name, stations: $stations, favorites: $favorites)
+                        } label: {
+                            GenreCardView(title: displayGenreName(g.name), icon: icon(for: g.name), tint: tint(for: g.name))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                if !rest.isEmpty {
+                    Text("More Genres")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .padding(.top, 8)
+
+                    VStack(spacing: 0) {
+                        ForEach(rest) { g in
+                            NavigationLink {
+                                GenreStationsListView(genre: g.name, stations: $stations, favorites: $favorites)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Text(icon(for: g.name))
+                                    Text(displayGenreName(g.name))
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.vertical, 12)
+                                .contentShape(Rectangle())
+                            }
+                            Divider()
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 10)
+        }
+        .navigationTitle("Genres")
+        .searchable(text: $query, prompt: "Search")
+        .onChange(of: query) { _, newValue in
+            AppLog.action("Genres search query: \(newValue)")
+        }
+    }
+}
+
+/// Station list filtered by a single country (card rows + favorite hearts).
+struct CountryStationsListView: View {
+    let country: String
+    @Binding var stations: [RadioStation]
+    @Binding var favorites: Set<String>
+
+    @State private var searchText: String = ""
+    @State private var scope: ListScope = .all
+
+    private func stationFavoriteID(_ station: RadioStation) -> String { "station_" + station.id }
+
+    private var filteredStations: [RadioStation] {
+        let base = stations.filter { $0.country == country }
+        let scoped: [RadioStation]
+        if scope == .favorites {
+            scoped = base.filter { favorites.contains(stationFavoriteID($0)) }
+        } else {
+            scoped = base
+        }
+
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let searched = q.isEmpty ? scoped : scoped.filter { $0.name.localizedCaseInsensitiveContains(q) }
+        return searched.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    var body: some View {
+        List {
+            if filteredStations.isEmpty {
+                ContentUnavailableView("No stations found", systemImage: "dot.radiowaves.left.and.right")
+                    .listRowSeparator(.hidden)
+            } else {
+                ForEach(filteredStations) { station in
+                    NavigationLink {
+                        StationMusicModalView(station: station, favorites: $favorites)
+                    } label: {
+                        StationRow(station: station, favorites: $favorites)
+                    }
+                    .cardListRowStyle()
+                }
+            }
+        }
+        .navigationTitle(country)
+        .searchable(text: $searchText, prompt: "Search stations")
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("Scope", selection: $scope) {
+                    ForEach(ListScope.allCases) { s in
+                        Text(s.rawValue).tag(s)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 260)
+                .accessibilityLabel("List scope")
+            }
+        }
+        .onChange(of: scope) { _, newValue in
+            AppLog.action("Country stations scope changed: \(newValue.rawValue) (\(country))")
+        }
+    }
+}
+
+/// Station list filtered by a single genre (card rows + favorite hearts).
+struct GenreStationsListView: View {
+    let genre: String
+    @Binding var stations: [RadioStation]
+    @Binding var favorites: Set<String>
+
+    @State private var searchText: String = ""
+    @State private var scope: ListScope = .all
+
+    private func stationFavoriteID(_ station: RadioStation) -> String { "station_" + station.id }
+
+    private var filteredStations: [RadioStation] {
+        let base = stations.filter { $0.moodGenreLabels.contains(genre) }
+        let scoped: [RadioStation]
+        if scope == .favorites {
+            scoped = base.filter { favorites.contains(stationFavoriteID($0)) }
+        } else {
+            scoped = base
+        }
+
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let searched = q.isEmpty ? scoped : scoped.filter { $0.name.localizedCaseInsensitiveContains(q) || $0.country.localizedCaseInsensitiveContains(q) }
+        return searched.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    var body: some View {
+        List {
+            if filteredStations.isEmpty {
+                ContentUnavailableView("No stations found", systemImage: "dot.radiowaves.left.and.right")
+                    .listRowSeparator(.hidden)
+            } else {
+                ForEach(filteredStations) { station in
+                    NavigationLink {
+                        StationMusicModalView(station: station, favorites: $favorites)
+                    } label: {
+                        StationRow(station: station, favorites: $favorites)
+                    }
+                    .cardListRowStyle()
+                }
+            }
+        }
+        .navigationTitle(displayGenreName(genre))
+        .searchable(text: $searchText, prompt: "Search stations")
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("Scope", selection: $scope) {
+                    ForEach(ListScope.allCases) { s in
+                        Text(s.rawValue).tag(s)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 260)
+                .accessibilityLabel("List scope")
+            }
+        }
+        .onChange(of: scope) { _, newValue in
+            AppLog.action("Genre stations scope changed: \(newValue.rawValue) (\(genre))")
+        }
+    }
+}
+
+
 
 /// Drives the animated "fly to random station" camera sequence on the map.
 struct RandomStationFlightRequest: Identifiable {
@@ -670,6 +1523,7 @@ struct RecentTabView: View {
     @Binding var stations: [RadioStation]
     @Binding var favorites: Set<String>
 
+    /// Callback used to open the Help sheet from the toolbar.
     let onHelp: () -> Void
 
     @EnvironmentObject private var recents: RecentManager
@@ -680,6 +1534,31 @@ struct RecentTabView: View {
     @State private var placeDetent: PresentationDetent = .height(360)
     @State private var stationDetent: PresentationDetent = .height(340)
 
+    /// Top segmented control mode for the Favorites tab.
+    private enum FavoritesMode: String, CaseIterable, Identifiable {
+        case favorites = "Favorites"
+        case recent = "Recent"
+        var id: String { rawValue }
+    }
+
+    @State private var mode: FavoritesMode = .favorites
+
+    /// Category chips for the Favorites mode (mirrors the Places tab chips, but without the radio discovery filters).
+    private enum FavoritesCategoryFilter: Hashable {
+        case all
+        case place(PlaceCategory)
+        case radio
+
+        var label: String {
+            switch self {
+            case .all: return "All Categories"
+            case .place(let c): return c.displayName
+            case .radio: return "Radio"
+            }
+        }
+    }
+
+    @State private var favoritesCategoryFilter: FavoritesCategoryFilter = .all
 
     // ActiveSheet defines custom cases and helpers used by this feature area.
     enum ActiveSheet: Identifiable {
@@ -695,6 +1574,105 @@ struct RecentTabView: View {
     }
 
     private var recentItems: [RecentItem] { recents.items }
+
+    /// Computes the favorites identifier used for a station.
+    private func stationFavoriteID(_ station: RadioStation) -> String { "station_" + station.id }
+
+    private var favoritePlaces: [Place] {
+        places
+            .filter { favorites.contains($0.id) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var favoriteStations: [RadioStation] {
+        stations
+            .filter { favorites.contains(stationFavoriteID($0)) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var placeCategories: [PlaceCategory] {
+        Array(Set(places.map { $0.effectiveCategory }))
+            .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    }
+
+    private var filteredFavoritePlaces: [Place] {
+        switch favoritesCategoryFilter {
+        case .all:
+            return favoritePlaces
+        case .radio:
+            return []
+        case .place(let c):
+            return favoritePlaces.filter { $0.effectiveCategory == c }
+        }
+    }
+
+    private var filteredFavoriteStations: [RadioStation] {
+        switch favoritesCategoryFilter {
+        case .all, .radio:
+            return favoriteStations
+        case .place:
+            return []
+        }
+    }
+
+    private func chipButton(title: String, isSelected: Bool, action: @escaping () -> Void, hint: String) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline)
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(isSelected ? Color.primary.opacity(0.12) : Color.primary.opacity(0.06))
+                .clipShape(Capsule())
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .accessibilityLabel(title)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityHint(hint)
+    }
+
+    private var favoritesCategoryChipsCard: some View {
+        ScrollView(.horizontal, showsIndicators: true) {
+            HStack(spacing: 8) {
+                chipButton(
+                    title: FavoritesCategoryFilter.all.label,
+                    isSelected: favoritesCategoryFilter == .all,
+                    action: { favoritesCategoryFilter = .all },
+                    hint: "Shows your favorited places and radio stations"
+                )
+
+                ForEach(placeCategories, id: \.self) { cat in
+                    chipButton(
+                        title: cat.displayName,
+                        isSelected: favoritesCategoryFilter == .place(cat),
+                        action: { favoritesCategoryFilter = .place(cat) },
+                        hint: "Filters your favorites to the \(cat.displayName) category"
+                    )
+                }
+
+                chipButton(
+                    title: FavoritesCategoryFilter.radio.label,
+                    isSelected: favoritesCategoryFilter == .radio,
+                    action: { favoritesCategoryFilter = .radio },
+                    hint: "Filters your favorites to radio stations"
+                )
+            }
+            .padding(.vertical, 4)
+            .fixedSize(horizontal: true, vertical: false)
+            .buttonStyle(.plain)
+        }
+        .scrollIndicators(.visible)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 3)
+    }
+
+    private var favoritesEmpty: Bool { favoritePlaces.isEmpty && favoriteStations.isEmpty }
 
     // Removes recent item for this feature.
     private func removeRecentItem(_ item: RecentItem) {
@@ -717,89 +1695,334 @@ struct RecentTabView: View {
         return nil
     }
 
+    /// Card-like row for recent items (keeps Recents behavior while matching the new card styling).
+    private func recentCardRow(for item: RecentItem) -> some View {
+        HStack(spacing: 12) {
+            if item.kind == .station {
+                StationLogoView(logoURLString: resolvedLogoURL(for: item))
+                    .frame(width: 34, height: 34)
+            } else {
+                Image(systemName: "music.note")
+                    .frame(width: 34, height: 34)
+                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(.body.weight(.semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                Text(item.subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 3)
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+    private func favoriteStationCardRow(_ station: RadioStation) -> some View {
+        let favoriteID = stationFavoriteID(station)
+        let isFavorite = favorites.contains(favoriteID)
+
+        return HStack(spacing: 12) {
+            AlamofireStationLogoView(logoURLString: station.logoURL)
+                .frame(width: 40, height: 40)
+                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(station.name)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text(station.country)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Text("Radio")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                if isFavorite {
+                    favorites.remove(favoriteID)
+                } else {
+                    favorites.insert(favoriteID)
+                }
+            } label: {
+                Image(systemName: isFavorite ? "heart.fill" : "heart")
+                    .imageScale(.large)
+                    .foregroundStyle(isFavorite ? .red : .primary)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(isFavorite ? "Unfavorite" : "Favorite")
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 3)
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func favoritePlaceCardRow(_ place: Place) -> some View {
+        let isFavorite = favorites.contains(place.id)
+
+        return HStack(spacing: 12) {
+            Image(systemName: place.iconSystemName)
+                .font(.system(size: 18, weight: .semibold))
+                .frame(width: 40, height: 40)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .foregroundStyle(.accent)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(place.name)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text(place.subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Text(place.effectiveCategory.displayName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                if isFavorite {
+                    favorites.remove(place.id)
+                } else {
+                    favorites.insert(place.id)
+                }
+            } label: {
+                Image(systemName: isFavorite ? "heart.fill" : "heart")
+                    .imageScale(.large)
+                    .foregroundStyle(isFavorite ? .red : .primary)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(isFavorite ? "Unfavorite" : "Favorite")
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 3)
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+
+    private var modePicker: some View {
+            Picker("Favorites view mode", selection: $mode) {
+                ForEach(FavoritesMode.allCases) { option in
+                    Text(option.rawValue).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 320)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Favorites view mode")
+            .accessibilityValue(mode.rawValue)
+            .accessibilityHint("Switch between your favorites and recent items")
+        }
 
     var body: some View {
         NavigationStack {
             List {
-                if recentItems.isEmpty {
-                    ContentUnavailableView("No recent items", systemImage: "clock")
-                } else {
-                    ForEach(recentItems) { item in
-                        Button {
-                            switch item.kind {
+                if mode == .favorites {
+                    if favoritesEmpty {
+                        ContentUnavailableView("No favorites yet", systemImage: "star")
+                            .listRowSeparator(.hidden)
+                    } else {
+                        // Category tags (Food / Housing / etc.) like the Places list, without the discovery filters.
+                        favoritesCategoryChipsCard
+                            .cardListRowStyle()
+
+                        let favStations = filteredFavoriteStations
+                        let favPlaces = filteredFavoritePlaces
+
+                        if favStations.isEmpty && favPlaces.isEmpty {
+                            ContentUnavailableView("No favorites in this category", systemImage: "star")
+                                .listRowSeparator(.hidden)
+                        } else {
+                            switch favoritesCategoryFilter {
+                            case .all:
+                                if !favStations.isEmpty {
+                                    Section("Radio") {
+                                        ForEach(favStations) { station in
+                                            Button {
+                                                activeSheet = .station(station)
+                                            } label: {
+                                                StationRow(station: station, favorites: $favorites, showsDisclosure: true)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .cardListRowStyle()
+                                            .accessibilityHint("Opens the station player sheet. Use the heart button to remove from favorites.")
+                                        }
+                                    }
+                                    .textCase(nil)
+                                }
+
+                                if !favPlaces.isEmpty {
+                                    Section("Places") {
+                                        ForEach(favPlaces, id: \.listRefreshID) { place in
+                                            Button {
+                                                activeSheet = .place(place)
+                                            } label: {
+                                                PlaceRow(place: place, favorites: $favorites, showsDisclosure: true)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .cardListRowStyle()
+                                            .accessibilityHint("Opens the place player sheet. Use the heart button to remove from favorites.")
+                                        }
+                                    }
+                                    .textCase(nil)
+                                }
+
+                            case .radio:
+                                ForEach(favStations) { station in
+                                    Button {
+                                        activeSheet = .station(station)
+                                    } label: {
+                                        StationRow(station: station, favorites: $favorites, showsDisclosure: true)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .cardListRowStyle()
+                                    .accessibilityHint("Opens the station player sheet. Use the heart button to remove from favorites.")
+                                }
+
                             case .place:
-                                if let p = places.first(where: { $0.id == item.itemID }) {
-                                    activeSheet = .place(p)
-                                }
-                            case .station:
-                                if let s = stations.first(where: { $0.id == item.itemID }) {
-                                    activeSheet = .station(s)
+                                ForEach(favPlaces, id: \.listRefreshID) { place in
+                                    Button {
+                                        activeSheet = .place(place)
+                                    } label: {
+                                        PlaceRow(place: place, favorites: $favorites, showsDisclosure: true)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .cardListRowStyle()
+                                    .accessibilityHint("Opens the place player sheet. Use the heart button to remove from favorites.")
                                 }
                             }
-                        } label: {
-                            HStack(spacing: 12) {
-                                if item.kind == .station {
-                                    StationLogoView(logoURLString: resolvedLogoURL(for: item))
-                                        .frame(width: 34, height: 34)
-                                } else {
-                                    Image(systemName: "music.note")
-                                        .frame(width: 34, height: 34)
-                                        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                    }
+                } else {
+                    if recentItems.isEmpty {
+                        ContentUnavailableView("No recent items", systemImage: "clock")
+                            .listRowSeparator(.hidden)
+                    } else {
+                        // Recent mode already uses a large page title ("Recent"), so we
+                        // intentionally omit the section header to avoid a duplicate subtitle.
+                        Section {
+                            ForEach(recentItems) { item in
+                                Button {
+                                    switch item.kind {
+                                    case .place:
+                                        if let p = places.first(where: { $0.id == item.itemID }) {
+                                            activeSheet = .place(p)
+                                        }
+                                    case .station:
+                                        if let s = stations.first(where: { $0.id == item.itemID }) {
+                                            activeSheet = .station(s)
+                                        }
+                                    }
+                                } label: {
+                                    recentCardRow(for: item)
                                 }
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.title)
-                                        .font(.body.weight(.semibold))
-                                        .foregroundColor(.primary)
-                                        .lineLimit(1)
-                                    Text(item.subtitle)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(1)
+                                .buttonStyle(.plain)
+                                .cardListRowStyle()
+                                .contextMenu {
+                                    Button(role: .destructive) {
+                                        removeRecentItem(item)
+                                    } label: {
+                                        Label("Remove from Recent", systemImage: "trash")
+                                    }
                                 }
-
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.vertical, 2)
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                removeRecentItem(item)
-                            } label: {
-                                Label("Remove from Recent", systemImage: "trash")
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(role: .destructive) {
+                                        removeRecentItem(item)
+                                    } label: {
+                                        Label("Remove", systemImage: "trash")
+                                    }
+                                }
+                                .accessibilityHint("Opens the saved detail view. Swipe or use actions to remove this item from recent.")
+                                .accessibilityAction(named: Text("Remove from recent")) {
+                                    removeRecentItem(item)
+                                }
                             }
                         }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                removeRecentItem(item)
-                            } label: {
-                                Label("Remove", systemImage: "trash")
-                            }
-                        }
-                        .accessibilityHint("Opens the saved detail view. Swipe or use actions to remove this item from recent.")
-                        .accessibilityAction(named: Text("Remove from recent")) {
-                            removeRecentItem(item)
-                        }
+                        .textCase(nil)
                     }
                 }
             }
-            .navigationTitle("Recent")
-            .toolbar {
+            // Dynamic title so the Recent mode shows "Recent" while Favorites mode stays "Favorites".
+            .navigationTitle(mode == .recent ? "Recent" : "Favorites")
+                        .toolbar {
+                ToolbarItem(placement: .principal) {
+                    modePicker
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(action: onHelp) {
                         Image(systemName: "questionmark.circle")
                     }
                     .accessibilityLabel("Help")
                 }
-                if !recentItems.isEmpty {
+
+                if mode == .recent && !recentItems.isEmpty {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button("Clear") { recents.clear() }
+                        Button("Clear") {
+                            AppLog.action("Cleared recent items")
+                            recents.clear()
+                        }
                     }
                 }
+            }
+            .onChange(of: mode) { _, newValue in
+                AppLog.action("Favorites tab mode changed: \(newValue.rawValue)")
+            }
+            .onChange(of: favoritesCategoryFilter) { _, newValue in
+                AppLog.action("Favorites category filter changed: \(newValue.label)")
             }
             .onChange(of: activeSheet?.id) { _, _ in
                 placeDetent = .height(360)
@@ -824,6 +2047,7 @@ struct RecentTabView: View {
         }
     }
 }
+
 
 /// Map-only search bar to filter radio stations and place pins by name.
 struct MapStationSearchBar: View {
@@ -4659,6 +5883,7 @@ struct PlacesListView: View {
                     } label: {
                         StationRow(station: s, favorites: $favorites)
                     }
+                    .cardListRowStyle()
                 }
             }
         } else if case .place = selectedFilter {
@@ -4676,6 +5901,7 @@ struct PlacesListView: View {
                     } label: {
                         PlaceRow(place: place, favorites: $favorites)
                     }
+                    .cardListRowStyle()
                 }
             }
         } else {
@@ -4696,6 +5922,7 @@ struct PlacesListView: View {
                             } label: {
                                 StationRow(station: s, favorites: $favorites)
                             }
+                    .cardListRowStyle()
                         }
                     }
                 }
@@ -4708,6 +5935,7 @@ struct PlacesListView: View {
                             } label: {
                                 PlaceRow(place: place, favorites: $favorites)
                             }
+                    .cardListRowStyle()
                         }
                     }
                 }
@@ -4735,6 +5963,7 @@ struct PlacesListView: View {
                                     } label: {
                                         StationRow(station: s, favorites: $favorites)
                                     }
+                    .cardListRowStyle()
                                 }
                             }
                         }
@@ -4747,6 +5976,7 @@ struct PlacesListView: View {
                                     } label: {
                                         PlaceRow(place: place, favorites: $favorites)
                                     }
+                    .cardListRowStyle()
                                 }
                             }
                         }
@@ -4757,6 +5987,7 @@ struct PlacesListView: View {
                             } label: {
                                 StationRow(station: s, favorites: $favorites)
                             }
+                    .cardListRowStyle()
                         }
                     } else {
                         ForEach(favPlaces, id: \.listRefreshID) { place in
@@ -4765,6 +5996,7 @@ struct PlacesListView: View {
                             } label: {
                                 PlaceRow(place: place, favorites: $favorites)
                             }
+                    .cardListRowStyle()
                         }
                     }
                 }
@@ -4839,53 +6071,104 @@ struct PlacesListView: View {
     }
 }
 
-/// Row view for displaying a place in a list.
+/// Applies a consistent card-like style to rows embedded in a `List`.
+struct CardListRowModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+    }
+}
+
+extension View {
+    /// Applies consistent insets/background for card-like rows inside a `List`.
+    func cardListRowStyle() -> some View {
+        modifier(CardListRowModifier())
+    }
+}
+
+/// Card-like row view for displaying a place in a list.
 struct PlaceRow: View {
     let place: Place
     @Binding var favorites: Set<String>
 
+    /// When used outside a `NavigationLink` (e.g. inside a button that opens a sheet),
+    /// show an explicit disclosure indicator to match the list styling.
+    var showsDisclosure: Bool = false
+
+    private var isFavorite: Bool { favorites.contains(place.id) }
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: place.iconSystemName)
-                .frame(width: 26)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 18, weight: .semibold))
+                .frame(width: 40, height: 40)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .foregroundStyle(.accent)
+                .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(place.name)
                     .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
                 Text(place.subtitle)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
                 Text(place.effectiveCategory.displayName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 8)
 
             Button {
-                if favorites.contains(place.id) {
+                if isFavorite {
                     favorites.remove(place.id)
                 } else {
                     favorites.insert(place.id)
                 }
             } label: {
-                Image(systemName: favorites.contains(place.id) ? "heart.fill" : "heart")
+                Image(systemName: isFavorite ? "heart.fill" : "heart")
                     .imageScale(.large)
-                    .foregroundStyle(favorites.contains(place.id) ? .red : .primary)
+                    .foregroundStyle(isFavorite ? .red : .primary)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(favorites.contains(place.id) ? "Unfavorite" : "Favorite")
+            // Borderless prevents the tap from triggering the parent NavigationLink/Button.
+            .buttonStyle(.borderless)
+            .accessibilityLabel(isFavorite ? "Unfavorite" : "Favorite")
+
+            if showsDisclosure {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
         }
-        .padding(.vertical, 6)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 3)
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
 
-
-/// Row view for displaying a radio station in a list.
+/// Card-like row view for displaying a radio station in a list.
 struct StationRow: View {
     let station: RadioStation
     @Binding var favorites: Set<String>
+
+    /// When used outside a `NavigationLink` (e.g. inside a button that opens a sheet),
+    /// show an explicit disclosure indicator to match the list styling.
+    var showsDisclosure: Bool = false
 
     private var favoriteID: String { "station_" + station.id }
     private var isFavorite: Bool { favorites.contains(favoriteID) }
@@ -4894,17 +6177,25 @@ struct StationRow: View {
         HStack(spacing: 12) {
             // Prefer the station's logo if it exists, otherwise fall back to the default radio icon.
             AlamofireStationLogoView(logoURLString: station.logoURL)
-                .frame(width: 26, height: 26)
+                .frame(width: 40, height: 40)
+                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(station.name)
                     .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
                 Text(station.country)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
                 Text("Radio")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 8)
@@ -4920,10 +6211,26 @@ struct StationRow: View {
                     .imageScale(.large)
                     .foregroundStyle(isFavorite ? .red : .primary)
             }
-            .buttonStyle(.plain)
+            // Borderless prevents the tap from triggering the parent NavigationLink/Button.
+            .buttonStyle(.borderless)
             .accessibilityLabel(isFavorite ? "Unfavorite" : "Favorite")
+
+            if showsDisclosure {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
         }
-        .padding(.vertical, 6)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 3)
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
 
